@@ -1,5 +1,5 @@
-#define _CRT_SECURE_NO_WARNINGS
-/*
+#define _CRT_SECURE_NO_WARNINGS                                                   /*basa"d
+
 			   Tel Aviv University
 			 Faculty  of engineering
 
@@ -25,13 +25,11 @@ Yuval Dori                               Yuval Levy
 
 
 
-	  last modified   19:14:05  29.12.2020
-*/
+	  last modified   19:14:05  29.12.2020  */
 
 // define all are constats and libraries trughout the simulation
-
-#define REG_IO_SIZE 18
-#define REG_NUM_SIZE 16
+#define IO_REG_AMOUNT 18
+#define REG_AMOUNT 16
 #define LINE_MAX_SIZE 9
 #define CLK_Hz 1024
 #define MEMORY_SIZE 4096
@@ -41,9 +39,9 @@ Yuval Dori                               Yuval Levy
 #include <string.h>
 #include <stdlib.h>
 
-//define Command structure - a register that holds 5 fields and its easy to acsses each of them on the software level
+//define Command structure 
 typedef struct Command
-{
+{  // A register that holds 5 fields and its easy to acsses each of them on the software level
 	unsigned int imm;          //39:20 bits   - 20 bits representing a number for calculations
 	unsigned int OpCode;       //19:12 bits   - operation identifier
 	unsigned int rd;           //11:08 bits   - destination register address
@@ -52,14 +50,15 @@ typedef struct Command
 }Command;
 
 //behold all of our gloriuos function
-int read_imemin(unsigned int* mem, char * address);       // no
+int read_imemin(unsigned int* mem, char * address);      // no?
 int read_dmemin(unsigned int* mem, char * address);
-int read_diskin(unsigned int* disk, char * address);     // no
-int read_irq2in(unsigned int* irq2, char * address);     // no
-int file_to_array(unsigned int* arr, char* path);
+int read_diskin(unsigned int* disk, char * address);     // no?
+int read_irq2in(unsigned int* irq2, char * address);     // no?
+//int file_to_array(unsigned int* arr, char* path);
 int IntExtand(int imm);
 unsigned int GetByte(unsigned int num, int pos);
-Command line_to_command(unsigned int inst);
+Command line_to_command(unsigned int imem[], int pc);
+int how_many_rows(Command cmd);
 void add(int* regs, Command cmd);
 void sub(int* regs, Command cmd);
 void and(int* regs, Command cmd);
@@ -85,7 +84,7 @@ void disk_handler(int* disk, int* io_regs, int* mem);
 void update_irq2(int* io_regs, int* irq2, int counter);
 int ABS(signed int num);
 void export_regout(int regs[], char file_name[]);
-void create_memout(unsigned int* mem, char file_name[]);
+void export_memout(unsigned int* mem, char file_name[]);
 void export_diskout(unsigned int* disk, char file_name[]);
 void export_cycles(int counter, char file_name[]);
 void create_line_for_trace(char line_for_trace[], int regs[], int pc, unsigned int inst, int imm);
@@ -93,25 +92,25 @@ void create_line_for_hwregtrace(char line_for_hwregtrace[], int io_regs[], int r
 void create_line_for_monitor(char line_for_display[], int regs[], int io_regs[], int cycles, Command cmd);
 void create_line_for_monitor_yuv(char line_for_display[], int regs[], int io_regs[], int cycles, Command cmd);
 void create_line_for_leds(char line_for_leds[], int regs[], int io_regs[], int cycles, Command cmd);
-Command interrupt_handler(int* reg_io, int* regs, Command cmd, int* memory, int* PC, int* reti_on);
+Command interrupt_handler(int* reg_io, int* regs, Command cmd, int* memory, int* PC, int* reti_on, unsigned int imem[], int pc);
 Command Invalid_cmd(Command cmd);
 
 // we must handle interrupts when they occour, due to clock or errors
-Command interrupt_handler(int* reg_io, int* regs, Command cmd, int* memory, int* PC, int* reti_on) {
+Command interrupt_handler(int* reg_io, int* regs, Command cmd, int* memory, int* PC, int* reti_on, unsigned int imem[], int pc) {
 	if (*reti_on) {
 		int temp_PC = 0;                    //setting a temp integer to hold the PC for after the interrupt is over
 		*reti_on = 0;                       //zeroing the flag
 		reg_io[7] = *PC;                    //the 7th spot on the i/o register holds the current Program Counter
 		*PC = reg_io[6];                    //our PC is being changed one spot back
-		temp_PC = memory[reg_io[6]];        //
-		return line_to_command(temp_PC);    //
+		//temp_PC = memory[reg_io[6]];
+		return line_to_command(memory, reg_io[6]);    // ******************************************************************************************
 	}
 	//if reti isnt on then there's no need to interrupt
 	else
 		return cmd;
 }
 
-int file_to_array(unsigned int* arr, char * path)
+/*int file_to_array(unsigned int* arr, char * path)
 {
 	FILE *fp = fopen(path, "r");                                      // open file
 	if (!fp)                                                          // handle error
@@ -129,27 +128,30 @@ int file_to_array(unsigned int* arr, char * path)
 	
 	fclose(fp);                                                       // closing the file
 	return 0;
-}
-
+}*/
 
 //read imemin line by line and store it on "path" array
 int read_imemin(unsigned int* imem, char * path)
 {
-	FILE *fp = fopen(path, "r");                                // open memin file
+	FILE *fp = fopen(path, "r");                                // open imemin file
 	if (!fp)                                                    // handle error
 		return -1;
 
 	// read imemin file line by line and turn it into array
-	char line[LINE_MAX_SIZE];
+	char line[6];
 	int i = 0;
-	while (!feof(fp) && fgets(line, LINE_MAX_SIZE, fp) && (i <= MEMORY_SIZE))         //while the file is not ended or reached max line
-	{
+	while (!feof(fp) && fgets(line, 6, fp) && (i <= MEMORY_SIZE)) 
+	{                                                          //while the file is not ended or reached max line
 		if ((strcmp(line,"\n")==0) || (strcmp(line,"\0")==0))  // ignore white spaces
 			continue;
-		imem[i] = strtol(line, NULL, 16);
+		imem[i] = strtol(line, NULL, 16);                      // base 16 cuz of hexa
 		i++;
 	}
 	fclose(fp);                                                 // closing the file
+	/*for (int k = 0; imem[k] != '\0'; k++)
+	{
+		fprintf("%d\n", k);
+	}*/
 	return 0;
 }
 
@@ -163,10 +165,10 @@ int read_dmemin(unsigned int* dmem, char * path)
 	// read dmemin file line by line and turn it into array
 	char line[LINE_MAX_SIZE];
 	int i = 0;
-	while (!feof(fp) && fgets(line, LINE_MAX_SIZE, fp) && ( i <= STORAGE_SIZE))         
+	while (!feof(fp) && fgets(line, LINE_MAX_SIZE, fp))         
 	{                                                           //while the file is not ended or reached max line
-		if ((strcmp(line, "\n") == 0) || (strcmp(line, "\0") == 0))  // ignore white spaces
-			continue;
+		if ((strcmp(line, "\n") == 0) || (strcmp(line, "\0") == 0))  
+			continue;			                                // ignore white spaces
 		dmem[i] = strtol(line, NULL, 16);
 		i++;
 	}
@@ -200,7 +202,7 @@ int read_irq2in(unsigned int* irq2, char * address)
 {
 	FILE *fp = fopen(address, "r");                              // open diskin file
 	if (!fp)                                                     // handle error
-		return -1;                                               //if an Error accoured, we return -1
+		return -1;                                               // if an Error accoured, we return -1
 
 	char line[LINE_MAX_SIZE];
 	int i = 0;
@@ -218,12 +220,20 @@ int read_irq2in(unsigned int* irq2, char * address)
 
 //edds ones in front of imm
 int IntExtand(int imm)
-{
+{  
 	int extanded = (0x00000FFF & imm);       //000000000000000000000000xxxxxxxxxxxx
 	int mask = 0x00000800;                   //000000000000000000000000100000000000
 	if (mask & imm)                          //if imm is negative extand it withe ones, else with zeros 
 		extanded += 0xFFFFF000;              //111111111111111111111111xxxxxxxxxxxx
 	return extanded;
+}
+
+int how_many_rows(Command cmd)
+{
+	int rows = 1;
+	if ((cmd.OpCode == 21) || (cmd.rd == 1) || (cmd.rt == 1) || (cmd.rs == 1))
+		rows = 2; 
+	return rows;
 }
 
 //converts a neg number to pos in two's compliment represantation
@@ -247,32 +257,45 @@ unsigned int GetByte(unsigned int num, int pos)
 }
 
 //we Pharse on a line and using GetByte extract its commands
-Command line_to_command(unsigned int inst)
+Command line_to_command(unsigned int imem[], int pc)
 {
-	// a line for example : 047A5000   op = 04, rd = 7, rs = A, rt = 5, imm = 000
+	// an input for example : 047A1              op = 04, rd = 7, rs = A, rt = 1, imm = 000E3
+	//                        000E3    
+	
+	unsigned int inst=imem[pc];
 	Command cmd;                                                                         //initialize an empty commant to fill with the line from memory
 	cmd.OpCode = (GetByte(inst, 7) * 16) + GetByte(inst, 6);                             //opcode is in the 2 first bytes of the line  
 	cmd.rd = GetByte(inst, 5);                                                           //rd register is in the 5th byte of the line  
 	cmd.rs = GetByte(inst, 4);                                                           //rs register is in the 4th byte of the line  
 	cmd.rt = GetByte(inst, 3);                                                           //rt register is in the 3rd byte of the line  
-	cmd.imm = (GetByte(inst, 2) * 16 * 16) + (GetByte(inst, 1) * 16) + GetByte(inst, 0); //the 3rd lsb bits are saved for imm 
-
+	
+	if (cmd.OpCode != 21)
+	{
+		if ((cmd.rd == 1) || (cmd.rt == 1) || (cmd.rs == 1))                             //checking if we have a immidiate command (2 rows)
+		{
+			printf("test - %d is a imm command,  ", pc);
+			pc++;                                                                        //the second row is saved for imm (place shift by multiply by powers of 16)
+			inst = imem[pc];
+			cmd.imm = (GetByte(inst, 4) * 65536) + (GetByte(inst, 3) * 4096) + (GetByte(inst, 2) * 256) + (GetByte(inst, 1) * 16) + GetByte(inst, 0);
+			printf("and the imm value is %d \n", cmd.imm);
+		}
+	}
 	//in case we have any non valid input in the given memory, we use Invalid_cmd() to handle Errors
 	if ((cmd.OpCode < 7) || (cmd.OpCode == 14) || (cmd.OpCode == 17))     //if opcode arithmetic we need to check few expations
 	{
-		if ((cmd.rd > 15) || (cmd.rt > 15) || (cmd.rs > 15) || (cmd.rd == 1) || (cmd.OpCode > 19))
+		if ((cmd.rd > 15) || (cmd.rt > 15) || (cmd.rs > 15) || (cmd.rd == 1) || (cmd.OpCode > 21))   
+			cmd = Invalid_cmd(cmd);                                       //if reg is above 15 or write to imm reg or opcode more then 21
+
+		if ((cmd.OpCode == 15) && (cmd.rd > 15))                          // check only cmd.rd
 			cmd = Invalid_cmd(cmd);
 
-		if ((cmd.OpCode == 13) && (cmd.rd > 15))                          // check only cmd.rd
-			cmd = Invalid_cmd(cmd);
-
-		if ((cmd.OpCode > 6) && (cmd.OpCode < 13))                        //if opcode branch we need to check few expations
+		if ((cmd.OpCode > 8) && (cmd.OpCode < 15))                        //if opcode is branch type we need to check few expations
 		{
 			if ((cmd.rd > 15) || (cmd.rt > 15) || (cmd.rs > 15))
 				cmd = Invalid_cmd(cmd);
 		}
 		if ((cmd.OpCode == 15) || (cmd.OpCode == 18))                     //if opcode sw check only registers
-		{
+		{                        //**************************************************************************need to validate numbers
 			if ((cmd.rd > 15) || (cmd.rt > 15) || (cmd.rs > 15))
 				cmd = Invalid_cmd(cmd);
 		}
@@ -668,7 +691,7 @@ void export_regout(int regs[], char file_name[]) {
 }
 
 // this function creates memout file
-void create_memout(unsigned int * mem, char file_name[]) {
+void export_memout(unsigned int * mem, char file_name[]) {
 	FILE* fp_memout;
 	fp_memout = fopen(file_name, "w");     // open a new file
 	if (fp_memout == NULL)                 // handle error
@@ -1006,23 +1029,26 @@ int main(int argc, char* argv[])
 	   5-dmemout.txt    6-regout.txt      7-trace.txt      8-hwregtrace.txt    9-cycles.txt
 	   10-leds.txt      11-monitor.txt    12-monitor.yuv   13-diskout.txt      */
 
-	int regs[REG_NUM_SIZE] = { 0 };                                                          //initialize register
-	int io_regs[REG_IO_SIZE] = { 0 };                                                        //initialize input output register
+	//printf("\n \ndear passengers,\nsmoking is prohibited by law in all stations pools and platforms \nexcept in designated smoking zones \n \n");
+
+	int regs[REG_AMOUNT] = { 0 };                                                            //initialize register
+	int io_regs[IO_REG_AMOUNT] = { 0 };                                                      //initialize input output register
 	int counter = 0;                                                                         //initialize counter
 	int pc = 0;                                                                              //initialize pc
-	int* pc_ptr = &pc;;                                                                      //initialize pc pointer
+	int* pc_ptr = &pc;                                                                       //initialize pc pointer
 	int reti = 1;                                                                            //setting reti to 1
 	int* reti_flag = &reti;                                                                  //initialize flag for interrupt to know if reti done
-	unsigned int mem[MEMORY_SIZE] = { 0 };                                                   //initialize memory
+	unsigned int imem[MEMORY_SIZE] = { 0 };                                                  //initialize memory
+	unsigned int dmem[STORAGE_SIZE] = { 0 };                                                 //initialize memory
 	unsigned int disk[STORAGE_SIZE] = { 0 };                                                 //initialize disk
 	unsigned int irq2[MEMORY_SIZE] = { 0 };                                                  //initialize irq 2
 
 	//initializing Error handler
-	if (read_imemin(mem, argv[1]) == -1)
+	if (read_imemin(imem, argv[1]) == -1)
 		Error_Handler(1);
-	if (read_dmemin(disk, argv[2]) == -1)
+	if (read_dmemin(dmem, argv[2]) == -1)
 		Error_Handler(2);
-	if (read_diskin(irq2, argv[3]) == -1)
+	if (read_diskin(disk, argv[3]) == -1)
 		Error_Handler(3);
 	if (read_irq2in(irq2, argv[4]) == -1)
 		Error_Handler(4);
@@ -1048,19 +1074,30 @@ int main(int argc, char* argv[])
 	fp_monitor_yuv = fopen(argv[12], "w");
 	if (fp_monitor_yuv == NULL)
 		Error_Handler(9);
-	
+
 	// Execution
 	unsigned int inst = 0;                                                                   //define instruction number
-	while (pc > 0)                                                                           //use the pc as flag for halt function
+	//printf("test - a pc loop is being preformed \n");
+	while (pc > -1)                                                                          //use the pc as flag for halt function
 	{
+		//printf("iteration number : %d \n", pc);
 		if (pc <= MEMORY_SIZE - 1)
-			inst = mem[pc];                                                                  //setting inst to be the current memory instruction
-		Command cmd = line_to_command(inst);                                                 //create Command struct
+			inst = imem[pc];                                                                 //setting inst to be the current memory instruction
+
+		if (pc > MEMORY_SIZE)
+			break;
+
+		Command cmd = line_to_command(imem, pc);                                             //create Command struct
+		if (how_many_rows(cmd) == 2)                                                         //if the command has an imm field we should jump PC by 1 and read the second row as an int
+			pc++;
+		
+		//printf("%d test - command is op-%d rd-%d rt-%d rs-%d imm-%d \n", pc, cmd.OpCode, cmd.rd, cmd.rt, cmd.rs, cmd.imm );
 		if ((io_regs[0] && io_regs[3]) || (io_regs[1] && io_regs[4]) || (io_regs[2] && io_regs[5]))
 		{
-			cmd = interrupt_handler(io_regs, regs, cmd, mem, pc_ptr, reti_flag);             //we have irq==1 and need to handle it	
+			cmd = interrupt_handler(io_regs, regs, cmd, imem, pc_ptr, reti_flag, imem, pc);            //we have irq==1 and need to handle it	
+			printf("test - being interrupted \n");
 			if (pc <= MEMORY_SIZE - 1)
-				inst = mem[pc];
+				inst = imem[pc];
 		}
 		char line_for_trace[200] = { 0 };                                                    //create line for trace file
 		char line_for_leds[20] = { 0 };                                                      //create line for leds file
@@ -1070,10 +1107,14 @@ int main(int argc, char* argv[])
 		regs[1] = IntExtand(cmd.imm);                                                        //first we do sign extend to immiediate
 		update_irq2(io_regs, irq2, counter);                                                 //update irq2status register
 		timer(io_regs);                                                                      //check if timer is enable
-		if (io_regs[17] == 1)                                                                //check if disk is still busy
-			disk_handler(disk, io_regs, mem);
+		if (io_regs[17] == 1)
+		{                                                                //check if disk is still busy
+			disk_handler(disk, io_regs, imem);
+			printf("test 1 \n");
+		}
 		if ((cmd.OpCode == 17) || (cmd.OpCode == 18))                                        //if we read or write
 		{
+			printf("test - opcode is read or write\n");
 			create_line_for_hwregtrace(line_for_hwregtrace, io_regs, regs, counter, cmd);    //append to trace file
 			fprintf(fp_hwregtrace, "%s\n", line_for_hwregtrace);                             //fprintf the data at the end of hwregtrace
 			fprintf(fp_hwregtrace, "condition writing onto hwregtrace\n");
@@ -1083,6 +1124,7 @@ int main(int argc, char* argv[])
 		fprintf(fp_trace, "condition writing onto trace\n");
 		if (((regs[cmd.rs] + regs[cmd.rt]) == 9) && (cmd.OpCode == 18))
 		{
+			printf("test 2 \n");
 			if (regs[cmd.rd] != io_regs[regs[cmd.rs] + regs[cmd.rt]])
 			{
 				create_line_for_leds(line_for_leds, regs, io_regs, counter, cmd);            //append to leds file
@@ -1092,6 +1134,7 @@ int main(int argc, char* argv[])
 		}
 		if ((regs[cmd.rs] + regs[cmd.rt]) == 10 && cmd.OpCode == 18)
 		{
+			printf("test 2 \n");
 			if (regs[cmd.rd] != io_regs[regs[cmd.rs] + regs[cmd.rt]])
 			{
 				create_line_for_monitor(line_for_monitor, regs, io_regs, counter, cmd);      //append to display file
@@ -1102,24 +1145,27 @@ int main(int argc, char* argv[])
 				fprintf(fp_monitor_yuv, "condition writing onto monitor.yuv\n");
 			}
 		}
-		pc = OPcode_To_execute(regs, io_regs, pc, cmd, mem, disk, reti_flag);                //execute instruction
+		//printf("test 3 \n");
+		pc = OPcode_To_execute(regs, io_regs, pc, cmd, imem, disk, reti_flag);               //execute instruction
 		io_regs[8] = counter++;                                                              //clk cycle counter
 	}
-	fprintf(fp_monitor_yuv, "non condition writing onto monitor.yuv\n");
+
 	fprintf(fp_leds, "non condition writing onto leds\n");
 	fprintf(fp_trace, "non condition writing onto trace\n");
 	fprintf(fp_hwregtrace, "non condition writing onto hwregtrace\n");
 	fprintf(fp_monitor, "non condition writing onto monitor\n");
+	fprintf(fp_monitor_yuv, "1010101001010101010010101110110100010101110100010001010001011010\n");
 
-	create_memout(mem, argv[5]);                                                             //create memout file
+	export_memout(imem, argv[5]);                                                            //create memout file
 	export_regout(regs, argv[6]);                                                            //create regout file
 	export_cycles(counter, argv[9]);                                                         //create cycles file
 	export_diskout(disk, argv[13]);                                                          //create diskout file
+	
 	fclose(fp_trace);                                                                        //close trace file
 	fclose(fp_hwregtrace);                                                                   //close hwregtrace file
 	fclose(fp_leds);                                                                         //close leds file
 	fclose(fp_monitor);                                                                      //close monitor file
 	fclose(fp_monitor_yuv);                                                                  //close monitor.yuv file
 
-	return 0;                                                                                //finish simulator
+	return 0;                                                                                //finish simulator (Baruch Hashem)
 }

@@ -261,23 +261,22 @@ Command line_to_command(unsigned int imem[], int pc)
 {
 	// an input for example : 047A1              op = 04, rd = 7, rs = A, rt = 1, imm = 000E3
 	//                        000E3    
-	
 	unsigned int inst=imem[pc];
 	Command cmd;                                                                         //initialize an empty commant to fill with the line from memory
 	cmd.OpCode = (GetByte(inst, 7) * 16) + GetByte(inst, 6);                             //opcode is in the 2 first bytes of the line  
 	cmd.rd = GetByte(inst, 5);                                                           //rd register is in the 5th byte of the line  
 	cmd.rs = GetByte(inst, 4);                                                           //rs register is in the 4th byte of the line  
 	cmd.rt = GetByte(inst, 3);                                                           //rt register is in the 3rd byte of the line  
-	
+	cmd.imm = 0;                                                                         //setting imm field to zero to avoid useless crap on it
 	if (cmd.OpCode != 21)
 	{
 		if ((cmd.rd == 1) || (cmd.rt == 1) || (cmd.rs == 1))                             //checking if we have a immidiate command (2 rows)
 		{
-			printf("test - %d is a imm command,  ", pc);
+			//printf("test - %d is a imm command,  ", pc);
 			pc++;                                                                        //the second row is saved for imm (place shift by multiply by powers of 16)
 			inst = imem[pc];
 			cmd.imm = (GetByte(inst, 4) * 65536) + (GetByte(inst, 3) * 4096) + (GetByte(inst, 2) * 256) + (GetByte(inst, 1) * 16) + GetByte(inst, 0);
-			printf("and the imm value is %d \n", cmd.imm);
+			//printf("and the imm value is %d \n", cmd.imm);
 		}
 	}
 	//in case we have any non valid input in the given memory, we use Invalid_cmd() to handle Errors
@@ -975,45 +974,45 @@ void Error_Handler(int id)
 	{
 	case 1:
 	{
-		printf("Error while initializing simulation due to 'imemin' read issue");
+		printf("Error while loading simulation due to 'imemin' read issue");
 		break;
 	}
 	case 2:
 	{
-		printf("Error while initializing loading simulation due to 'dmemin' read issue");
+		printf("Error while loading simulation due to 'dmemin' read issue");
 		break;
 	}
 	case 3:
 	{
-		printf("Error while initializing loading simulation due to 'diskin' read issue");
+		printf("Error while loading simulation due to 'diskin' read issue");
 		break;
 	}
 	case 4:
 	{
-		printf("Error while initializing loading simulation due to 'irq2in' read issue");
-		break;
-	}
-	case 5:
-	{
-		printf("Error while loading simulation due to a NULL fp_trace");
-		break;
-	}
-	case 6:
-	{
-		printf("Error while loading simulation due to a NULL fp_hwregtrace");
+		printf("Error while loading simulation due to 'irq2in' read issue");
 		break;
 	}
 	case 7:
 	{
-		printf("Error while loading simulation due to a NULL fp_leds");
+		printf("Error while loading simulation due to a NULL fp_trace");
 		break;
 	}
 	case 8:
 	{
+		printf("Error while loading simulation due to a NULL fp_hwregtrace");
+		break;
+	}
+	case 10:
+	{
+		printf("Error while loading simulation due to a NULL fp_leds");
+		break;
+	}
+	case 11:
+	{
 		printf("Error while loading simulation due to a NULL fp_monitor");
 		break;
 	}
-	case 9:
+	case 12:
 	{
 		printf("Error while loading simulation due to a NULL fp_monitor_yuv");
 		break;
@@ -1038,6 +1037,7 @@ int main(int argc, char* argv[])
 	int* pc_ptr = &pc;                                                                       //initialize pc pointer
 	int reti = 1;                                                                            //setting reti to 1
 	int* reti_flag = &reti;                                                                  //initialize flag for interrupt to know if reti done
+	unsigned int inst = 0;                                                                   //define instruction number
 	unsigned int imem[MEMORY_SIZE] = { 0 };                                                  //initialize memory
 	unsigned int dmem[STORAGE_SIZE] = { 0 };                                                 //initialize memory
 	unsigned int disk[STORAGE_SIZE] = { 0 };                                                 //initialize disk
@@ -1052,7 +1052,7 @@ int main(int argc, char* argv[])
 		Error_Handler(3);
 	if (read_irq2in(irq2, argv[4]) == -1)
 		Error_Handler(4);
-
+	
 	FILE* fp_trace;                                                                          //define pointer for writing trace file
 	FILE* fp_hwregtrace;                                                                     //define pointer for writing hwregtrace file
 	FILE* fp_leds;                                                                           //define pointer for writing leds file
@@ -1061,40 +1061,36 @@ int main(int argc, char* argv[])
 
 	fp_trace = fopen(argv[7], "w");
 	if (fp_trace == NULL)
-		Error_Handler(5);
+		Error_Handler(7);
 	fp_hwregtrace = fopen(argv[8], "w");
 	if (fp_hwregtrace == NULL)
-		Error_Handler(6);
+		Error_Handler(8);
 	fp_leds = fopen(argv[10], "w");
 	if (fp_leds == NULL)
-		Error_Handler(7);
+		Error_Handler(10);
 	fp_monitor = fopen(argv[11], "w");
 	if (fp_monitor == NULL)
-		Error_Handler(8);
+		Error_Handler(11);
 	fp_monitor_yuv = fopen(argv[12], "w");
 	if (fp_monitor_yuv == NULL)
-		Error_Handler(9);
+		Error_Handler(12);
 
 	// Execution
-	unsigned int inst = 0;                                                                   //define instruction number
-	//printf("test - a pc loop is being preformed \n");
-	while (pc > -1)                                                                          //use the pc as flag for halt function
+	
+
+	while ((pc > -1) && (pc < MEMORY_SIZE))                                                  //use the pc as flag for halt function
 	{
 		//printf("iteration number : %d \n", pc);
 		if (pc <= MEMORY_SIZE - 1)
 			inst = imem[pc];                                                                 //setting inst to be the current memory instruction
 
-		if (pc > MEMORY_SIZE)
-			break;
-
 		Command cmd = line_to_command(imem, pc);                                             //create Command struct
-		if (how_many_rows(cmd) == 2)                                                         //if the command has an imm field we should jump PC by 1 and read the second row as an int
+		if ((how_many_rows(cmd) == 2)&&(pc!= MEMORY_SIZE))                                   //if the command has an imm field we should jump PC by 1 and read the second row as an int
 			pc++;
-		
-		//printf("%d test - command is op-%d rd-%d rt-%d rs-%d imm-%d \n", pc, cmd.OpCode, cmd.rd, cmd.rt, cmd.rs, cmd.imm );
+		printf("%d test - command is op-%d rd-%d rt-%d rs-%d imm-%d \n", pc, cmd.OpCode, cmd.rd, cmd.rt, cmd.rs, cmd.imm );
 		if ((io_regs[0] && io_regs[3]) || (io_regs[1] && io_regs[4]) || (io_regs[2] && io_regs[5]))
 		{
-			cmd = interrupt_handler(io_regs, regs, cmd, imem, pc_ptr, reti_flag, imem, pc);            //we have irq==1 and need to handle it	
+			cmd = interrupt_handler(io_regs, regs, cmd, imem, pc_ptr, reti_flag, imem, pc);  //we have irq==1 and need to handle it	
 			printf("test - being interrupted \n");
 			if (pc <= MEMORY_SIZE - 1)
 				inst = imem[pc];
@@ -1108,7 +1104,7 @@ int main(int argc, char* argv[])
 		update_irq2(io_regs, irq2, counter);                                                 //update irq2status register
 		timer(io_regs);                                                                      //check if timer is enable
 		if (io_regs[17] == 1)
-		{                                                                //check if disk is still busy
+		{                                                                                    //check if disk is still busy
 			disk_handler(disk, io_regs, imem);
 			printf("test 1 \n");
 		}
@@ -1121,7 +1117,7 @@ int main(int argc, char* argv[])
 		}
 		create_line_for_trace(line_for_trace, regs, pc, inst, cmd.imm);                      //append to trace file
 		fprintf(fp_trace, "%s\n", line_for_trace);                                           //fprintf the data at the end of trace
-		fprintf(fp_trace, "condition writing onto trace\n");
+		//fprintf(fp_trace, "condition writing onto trace\n");
 		if (((regs[cmd.rs] + regs[cmd.rt]) == 9) && (cmd.OpCode == 18))
 		{
 			printf("test 2 \n");
@@ -1151,21 +1147,31 @@ int main(int argc, char* argv[])
 	}
 
 	fprintf(fp_leds, "non condition writing onto leds\n");
-	fprintf(fp_trace, "non condition writing onto trace\n");
+	//fprintf(fp_trace, "non condition writing onto trace\n");
 	fprintf(fp_hwregtrace, "non condition writing onto hwregtrace\n");
 	fprintf(fp_monitor, "non condition writing onto monitor\n");
 	fprintf(fp_monitor_yuv, "1010101001010101010010101110110100010101110100010001010001011010\n");
 
-	export_memout(imem, argv[5]);                                                            //create memout file
+	export_memout(imem, argv[5]);                                                            //create dmemout file
 	export_regout(regs, argv[6]);                                                            //create regout file
 	export_cycles(counter, argv[9]);                                                         //create cycles file
 	export_diskout(disk, argv[13]);                                                          //create diskout file
+	                                  //closing all the files
 	
-	fclose(fp_trace);                                                                        //close trace file
-	fclose(fp_hwregtrace);                                                                   //close hwregtrace file
-	fclose(fp_leds);                                                                         //close leds file
-	fclose(fp_monitor);                                                                      //close monitor file
-	fclose(fp_monitor_yuv);                                                                  //close monitor.yuv file
+	fclose(fp_trace);
+	fclose(fp_hwregtrace);                                                                   
+	fclose(fp_leds);                                                                       
+	fclose(fp_monitor);                                                                      
+	fclose(fp_monitor_yuv);
 
 	return 0;                                                                                //finish simulator (Baruch Hashem)
 }
+
+
+/* issues
+	1. no match between trace
+	2.need to run over file writing and validate entire line_for functions
+	3.need to check why pc keeps on staying on 4096 ant not over and out
+	4.need to line to command on an interrupt or disk handler
+	5.need to check closing all files instead of exit 1.
+*/

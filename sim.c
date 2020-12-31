@@ -1,6 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 /*
-               Tel Aviv University
+			   Tel Aviv University
 			 Faculty  of engineering
 
 
@@ -9,8 +9,8 @@
 
 
 
-				       A 
-				    S.I.M.P.
+					   A
+					S.I.M.P.
 				   processor.
 
 
@@ -23,7 +23,7 @@
 Yuval Dori                               Yuval Levy
 203244066                                 312238207
 
-              
+
 
 	  last modified   19:14:05  29.12.2020
 */
@@ -33,7 +33,7 @@ Yuval Dori                               Yuval Levy
 #define REG_IO_SIZE 18
 #define REG_NUM_SIZE 16
 #define LINE_MAX_SIZE 9
-#define TIMER_MAX_SIZE 1024
+#define CLK_Hz 1024
 #define MEMORY_SIZE 4096
 #define STORAGE_SIZE 16384 
 #define $ZERO 0
@@ -42,7 +42,7 @@ Yuval Dori                               Yuval Levy
 #include <stdlib.h>
 
 //define Command structure - a register that holds 5 fields and its easy to acsses each of them on the software level
-typedef struct Command 
+typedef struct Command
 {
 	unsigned int imm;          //39:20 bits   - 20 bits representing a number for calculations
 	unsigned int OpCode;       //19:12 bits   - operation identifier
@@ -52,9 +52,10 @@ typedef struct Command
 }Command;
 
 //behold all of our gloriuos function
-//int read_memin(unsigned int* mem, char * address);       // no
-//int read_diskin(unsigned int* disk, char * address);     // no
-//int read_irq2in(unsigned int* irq2, char * address);     // no
+int read_imemin(unsigned int* mem, char * address);       // no
+int read_dmemin(unsigned int* mem, char * address);
+int read_diskin(unsigned int* disk, char * address);     // no
+int read_irq2in(unsigned int* irq2, char * address);     // no
 int file_to_array(unsigned int* arr, char* path);
 int IntExtand(int imm);
 unsigned int GetByte(unsigned int num, int pos);
@@ -65,7 +66,7 @@ void and(int* regs, Command cmd);
 void or (int* regs, Command cmd);
 void sll(int* regs, Command cmd);
 void sra(int* regs, Command cmd);
-void srl(int* regs, Command cmd); 
+void srl(int* regs, Command cmd);
 int beq(int* regs, Command cmd, int pc);
 int bne(int* regs, Command cmd, int pc);
 int blt(int* regs, Command cmd, int pc);
@@ -112,45 +113,66 @@ Command interrupt_handler(int* reg_io, int* regs, Command cmd, int* memory, int*
 
 int file_to_array(unsigned int* arr, char * path)
 {
-	FILE *fp = fopen(path, "r");                                // open file
-	if (!fp)                                                    // handle error
+	FILE *fp = fopen(path, "r");                                      // open file
+	if (!fp)                                                          // handle error
 		return -1;
 
-	char line[LINE_MAX_SIZE];                                   // read file line by line and turn it into array
+	char line[LINE_MAX_SIZE];                                         // read file line by line and turn it into array
 	int i = 0;
-	while (!feof(fp) && fgets(line, LINE_MAX_SIZE, fp))         //while the file is not ended or reached max line 
+	while (!feof(fp) && fgets(line, LINE_MAX_SIZE, fp))               //while the file is not ended or reached max line 
 	{
 		if ((strcmp(line, "\n") == 0) || (strcmp(line, "\0") == 0))   // ignore white spaces
 			continue;
 		arr[i] = strtol(line, NULL, 16);
 		i++;
 	}
-	fclose(fp);                                                 // closing the file
+	
+	fclose(fp);                                                       // closing the file
 	return 0;
 }
 
-/*
-//read memin line by line and store it on "path" array
-int read_memin(unsigned int* mem, char * path)
+
+//read imemin line by line and store it on "path" array
+int read_imemin(unsigned int* imem, char * path)
 {
 	FILE *fp = fopen(path, "r");                                // open memin file
 	if (!fp)                                                    // handle error
 		return -1;
 
-	// read memin file line by line and turn it into array
+	// read imemin file line by line and turn it into array
 	char line[LINE_MAX_SIZE];
 	int i = 0;
-	while (!feof(fp) && fgets(line, LINE_MAX_SIZE, fp))         //while the file is not ended or reached max line
+	while (!feof(fp) && fgets(line, LINE_MAX_SIZE, fp) && (i <= MEMORY_SIZE))         //while the file is not ended or reached max line
 	{
 		if ((strcmp(line,"\n")==0) || (strcmp(line,"\0")==0))  // ignore white spaces
 			continue;
-		mem[i] = strtol(line, NULL, 16);
+		imem[i] = strtol(line, NULL, 16);
 		i++;
 	}
 	fclose(fp);                                                 // closing the file
 	return 0;
 }
 
+//read dmemin line by line and store it on "path" array
+int read_dmemin(unsigned int* dmem, char * path)
+{
+	FILE *fp = fopen(path, "r");                                // open memin file
+	if (!fp)                                                    // handle error
+		return -1;
+
+	// read dmemin file line by line and turn it into array
+	char line[LINE_MAX_SIZE];
+	int i = 0;
+	while (!feof(fp) && fgets(line, LINE_MAX_SIZE, fp) && ( i <= STORAGE_SIZE))         
+	{                                                           //while the file is not ended or reached max line
+		if ((strcmp(line, "\n") == 0) || (strcmp(line, "\0") == 0))  // ignore white spaces
+			continue;
+		dmem[i] = strtol(line, NULL, 16);
+		i++;
+	}
+	fclose(fp);                                                 // closing the file
+	return 0;
+}
 
 //read diskin line by line and store it on "disk" array
 int read_diskin(unsigned int* disk, char * address)
@@ -161,7 +183,7 @@ int read_diskin(unsigned int* disk, char * address)
 
 	char line[LINE_MAX_SIZE];                                   // read diskin file line by line and turn it into array
 	int i = 0;
-	while (!feof(fp) && fgets(line, LINE_MAX_SIZE, fp))
+	while (!feof(fp) && fgets(line, LINE_MAX_SIZE, fp) && (i <= STORAGE_SIZE))
 	{
 		if ((strcmp(line, "\n") == 0) || (strcmp(line, "\0") == 0))  // ignore white spaces
 			continue;
@@ -192,7 +214,7 @@ int read_irq2in(unsigned int* irq2, char * address)
 	fclose(fp); // close file
 	return 0;
 }
-*/
+
 
 //edds ones in front of imm
 int IntExtand(int imm)
@@ -338,7 +360,7 @@ int ble(int* regs, Command cmd, int pc)
 		pc = regs[cmd.rd];
 	else
 		pc++;
-	
+
 	return pc;
 }
 int bge(int* regs, Command cmd, int pc)
@@ -573,7 +595,7 @@ void disk_handler(int* disk, int * io_regs, int* mem)
 {
 	if (io_regs[17] == 0) {
 		io_regs[11] = 1;                  //enable timer	
-		io_regs[13] = TIMER_MAX_SIZE;     //set timermax to 1024
+		io_regs[13] = CLK_Hz;             //set timermax to 1024
 		io_regs[17] = 1;                  //disk is now busy
 		switch (io_regs[14])              // io_regs[14] is set to be regs[cmd.rd] in "out" command
 		{
@@ -703,8 +725,8 @@ void create_line_for_trace(char Trace_Line[], int regs[], int pc, unsigned int i
 	// sould be: PC INST R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 \n
 	int i;
 	char inst_line[9];
-	char pc_char[10] = {0};
-	char temp_reg_char[9] = {0};
+	char pc_char[10] = { 0 };
+	char temp_reg_char[9] = { 0 };
 	sprintf(pc_char, "%08X", pc);
 	sprintf(inst_line, "%08X", inst);
 	sprintf(Trace_Line, pc_char);                                       //add pc to line
@@ -713,7 +735,7 @@ void create_line_for_trace(char Trace_Line[], int regs[], int pc, unsigned int i
 	sprintf(Trace_Line + strlen(Trace_Line), " ");                      //add space
 
 	for (i = 0; i < 16; i++)                                            //add registers to line
-	{         
+	{
 		int temp_reg = 0;
 		if (i == 1)                                                     // for imm
 		{
@@ -728,23 +750,23 @@ void create_line_for_trace(char Trace_Line[], int regs[], int pc, unsigned int i
 			temp_reg = regs[i];
 		sprintf(temp_reg_char, "%08X", temp_reg);                       //change to hex
 		sprintf(Trace_Line + strlen(Trace_Line), temp_reg_char);        //add to line
-		if (i<16)                                                       //no space for last register
+		if (i < 16)                                                       //no space for last register
 			sprintf(Trace_Line + strlen(Trace_Line), " ");
 	}
-/*	int temp_reg = 0;
-	if (regs[i] < 0)
-		temp_reg = ABS(regs[i]);
-	else
-		temp_reg = regs[i];
-	sprintf(temp_reg_char, "%.8X", temp_reg);
-	sprintf(line_for_trace + strlen(line_for_trace), temp_reg_char);*/
+	/*	int temp_reg = 0;
+		if (regs[i] < 0)
+			temp_reg = ABS(regs[i]);
+		else
+			temp_reg = regs[i];
+		sprintf(temp_reg_char, "%.8X", temp_reg);
+		sprintf(line_for_trace + strlen(line_for_trace), temp_reg_char);*/
 }
 
 // create function that will colect data for hwregtrace
 void create_line_for_hwregtrace(char hwregtrace_line[], int io_regs[], int regs[], int counter, Command cmd)
 {
-	char counter_char[10] = {0};
-	char temp_reg_char[10] = {0};
+	char counter_char[10] = { 0 };
+	char temp_reg_char[10] = { 0 };
 	sprintf(counter_char, "%d", counter);
 	sprintf(hwregtrace_line, counter_char);                                //add counter to line
 	sprintf(hwregtrace_line + strlen(hwregtrace_line), " ");
@@ -896,12 +918,11 @@ void create_line_for_monitor_yuv(char line_for_monitor_yuv[], int regs[], int io
 	char clk_cycles[10];
 	char curr_display[10];
 	sprintf(clk_cycles, "%d", cycles);
-	sprintf(curr_display,"%c", regs[cmd.rd]);
+	sprintf(curr_display, "%c", regs[cmd.rd]);
 	sprintf(line_for_monitor_yuv, clk_cycles);                                     //add clk cycles to line
-	//sprintf(line_for_monitor_yuv + strlen(line_for_monitor_yuv), " ");             //add space 
+	//sprintf(line_for_monitor_yuv + strlen(line_for_monitor_yuv), " ");           //add space 
 	sprintf(line_for_monitor_yuv + strlen(line_for_monitor_yuv), curr_display);    //add current display to line
 }
-
 
 //create line for leds.txt file
 void create_line_for_leds(char line_for_leds[], int regs[], int io_regs[], int cycles, Command cmd)
@@ -915,12 +936,9 @@ void create_line_for_leds(char line_for_leds[], int regs[], int io_regs[], int c
 	sprintf(line_for_leds + strlen(line_for_leds), curr_leds); //add leds to line
 }
 
-
-
-
 Command Invalid_cmd(Command cmd)
-{                    // put stall when the comaand is not valid 
-	cmd.OpCode = 0;  // zeros all parameters of the command
+{   // zeros all parameters of the command when the command is not valid               
+	cmd.OpCode = 0;  
 	cmd.rd = 0;
 	cmd.rs = 0;
 	cmd.rt = 0;
@@ -929,45 +947,50 @@ Command Invalid_cmd(Command cmd)
 }
 
 void Error_Handler(int id)
-{
+{     // perhaps need to add a close(fp) for each file or the ones above it...
 	switch (id)
 	{
 	case 1:
 	{
-		printf("Error while initializing simulation due to 'memin' read issue");
+		printf("Error while initializing simulation due to 'imemin' read issue");
 		break;
 	}
 	case 2:
 	{
-		printf("Error while initializing loading simulation due to 'diskin' read issue");
+		printf("Error while initializing loading simulation due to 'dmemin' read issue");
 		break;
 	}
 	case 3:
 	{
-		printf("Error while initializing loading simulation due to 'irq2in' read issue");
+		printf("Error while initializing loading simulation due to 'diskin' read issue");
 		break;
 	}
 	case 4:
 	{
-		printf("Error while loading simulation due to a NULL fp_trace");
+		printf("Error while initializing loading simulation due to 'irq2in' read issue");
 		break;
 	}
 	case 5:
 	{
-		printf("Error while loading simulation due to a NULL fp_hwregtrace");
+		printf("Error while loading simulation due to a NULL fp_trace");
 		break;
 	}
 	case 6:
 	{
-		printf("Error while loading simulation due to a NULL fp_leds");
+		printf("Error while loading simulation due to a NULL fp_hwregtrace");
 		break;
 	}
 	case 7:
 	{
-		printf("Error while loading simulation due to a NULL fp_monitor");
+		printf("Error while loading simulation due to a NULL fp_leds");
 		break;
 	}
 	case 8:
+	{
+		printf("Error while loading simulation due to a NULL fp_monitor");
+		break;
+	}
+	case 9:
 	{
 		printf("Error while loading simulation due to a NULL fp_monitor_yuv");
 		break;
@@ -979,59 +1002,59 @@ void Error_Handler(int id)
 int main(int argc, char* argv[])
 {
 	/*                           arguments for the simulation:
-	   0-sim.exe        1-imemin.txt      2-dmemin.txt     3-diskin.txt        4-irq2in.txt   
-	   5-dmemout.txt    6-regout.txt      7-trace.txt      8-hwregtrace.txt    9-cycles.txt    
+	   0-sim.exe        1-imemin.txt      2-dmemin.txt     3-diskin.txt        4-irq2in.txt
+	   5-dmemout.txt    6-regout.txt      7-trace.txt      8-hwregtrace.txt    9-cycles.txt
 	   10-leds.txt      11-monitor.txt    12-monitor.yuv   13-diskout.txt      */
-	
-	int regs[REG_NUM_SIZE] = {0};                                                            //initialize register
-	int io_regs[REG_IO_SIZE] = {0};                                                          //initialize input output register
+
+	int regs[REG_NUM_SIZE] = { 0 };                                                          //initialize register
+	int io_regs[REG_IO_SIZE] = { 0 };                                                        //initialize input output register
 	int counter = 0;                                                                         //initialize counter
 	int pc = 0;                                                                              //initialize pc
 	int* pc_ptr = &pc;;                                                                      //initialize pc pointer
 	int reti = 1;                                                                            //setting reti to 1
 	int* reti_flag = &reti;                                                                  //initialize flag for interrupt to know if reti done
-	unsigned int mem[MEMORY_SIZE] = {0};                                                     //initialize memory
-	unsigned int disk[STORAGE_SIZE] = {0};                                                   //initialize disk
-	unsigned int irq2[MEMORY_SIZE] = {0};                                                    //initialize irq 2
+	unsigned int mem[MEMORY_SIZE] = { 0 };                                                   //initialize memory
+	unsigned int disk[STORAGE_SIZE] = { 0 };                                                 //initialize disk
+	unsigned int irq2[MEMORY_SIZE] = { 0 };                                                  //initialize irq 2
 
 	//initializing Error handler
-	if (file_to_array(mem, argv[1]) == -1)
+	if (read_imemin(mem, argv[1]) == -1)
 		Error_Handler(1);
-	if (file_to_array(disk, argv[3]) == -1)
+	if (read_dmemin(disk, argv[2]) == -1)
 		Error_Handler(2);
-	if (file_to_array(irq2, argv[4]) == -1)
+	if (read_diskin(irq2, argv[3]) == -1)
 		Error_Handler(3);
+	if (read_irq2in(irq2, argv[4]) == -1)
+		Error_Handler(4);
 
 	FILE* fp_trace;                                                                          //define pointer for writing trace file
 	FILE* fp_hwregtrace;                                                                     //define pointer for writing hwregtrace file
 	FILE* fp_leds;                                                                           //define pointer for writing leds file
 	FILE* fp_monitor;                                                                        //define pointer for writing monitor file
 	FILE* fp_monitor_yuv;                                                                    //define pointer for writing monitor.yuv file
-	
+
 	fp_trace = fopen(argv[7], "w");
-	fp_hwregtrace = fopen(argv[8], "w");
-	fp_leds = fopen(argv[10], "w");
-	fp_monitor = fopen(argv[11], "w");
-	fp_monitor_yuv = fopen(argv[12], "w");
-
-	//loading Error handler
 	if (fp_trace == NULL)
-		Error_Handler(4);
-	if (fp_hwregtrace == NULL)
 		Error_Handler(5);
-	if (fp_leds == NULL)
+	fp_hwregtrace = fopen(argv[8], "w");
+	if (fp_hwregtrace == NULL)
 		Error_Handler(6);
-	if (fp_monitor == NULL)
+	fp_leds = fopen(argv[10], "w");
+	if (fp_leds == NULL)
 		Error_Handler(7);
-	if (fp_monitor_yuv == NULL)
+	fp_monitor = fopen(argv[11], "w");
+	if (fp_monitor == NULL)
 		Error_Handler(8);
-
+	fp_monitor_yuv = fopen(argv[12], "w");
+	if (fp_monitor_yuv == NULL)
+		Error_Handler(9);
+	
 	// Execution
-	unsigned int inst;                                                                       //define instruction number
+	unsigned int inst = 0;                                                                   //define instruction number
 	while (pc > 0)                                                                           //use the pc as flag for halt function
 	{
 		if (pc <= MEMORY_SIZE - 1)
-			inst = mem[pc];
+			inst = mem[pc];                                                                  //setting inst to be the current memory instruction
 		Command cmd = line_to_command(inst);                                                 //create Command struct
 		if ((io_regs[0] && io_regs[3]) || (io_regs[1] && io_regs[4]) || (io_regs[2] && io_regs[5]))
 		{
@@ -1039,11 +1062,11 @@ int main(int argc, char* argv[])
 			if (pc <= MEMORY_SIZE - 1)
 				inst = mem[pc];
 		}
-		char line_for_trace[200] = {0};                                                      //create line for trace file
-		char line_for_leds[20] = {0};                                                        //create line for leds file
-		char line_for_monitor[20] = {0};                                                     //create line for display file
-		char line_for_monitor_yuv[20] = {0};                                                 //create line for display file
-		char line_for_hwregtrace[100] = {0};                                                 //create line for hwregtrace file
+		char line_for_trace[200] = { 0 };                                                    //create line for trace file
+		char line_for_leds[20] = { 0 };                                                      //create line for leds file
+		char line_for_monitor[20] = { 0 };                                                   //create line for display file
+		char line_for_monitor_yuv[20] = { 0 };                                               //create line for display file
+		char line_for_hwregtrace[100] = { 0 };                                               //create line for hwregtrace file
 		regs[1] = IntExtand(cmd.imm);                                                        //first we do sign extend to immiediate
 		update_irq2(io_regs, irq2, counter);                                                 //update irq2status register
 		timer(io_regs);                                                                      //check if timer is enable

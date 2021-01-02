@@ -61,8 +61,10 @@ int main(int argc, char *argv[])
 		printf("memory allocation error.");
 		return NULL;
 	}
-	word2 = scan_word_line("	.word 0x100 0xffffffff # a \n");
-	printf("\nthe address is: %d , and the data is: %d\n", word2->address, word2->data);
+	char address[500] = { "0xffffffff" };
+	word2 = scan_word_line("	.word 0xffffffff 0xff # a \n");
+	printf("%i\n", from_str_to_int(address));
+	printf("\nthe address is: %i , and the data is: %i\n", word2->address, word2->data);
 	
 	return 0;
 }
@@ -189,7 +191,6 @@ int convert_neg_hexa_to_int(char *str)
 	return res;
 }
 
-
 // scan word
 Word scan_word_line(char* line)
 {
@@ -238,7 +239,12 @@ Word scan_word_line(char* line)
 			curr_word[j] = '\0';
 			j = 0;
 			if (counter_word == 2)							//we found the address
-				word->address = from_str_to_int(curr_word);
+			{
+				if (is_negative(curr_word))
+					word->address = (1 << 12) + (from_str_to_int(curr_word) % (1 << 12));
+				else
+					word->address = from_str_to_int(curr_word) % (1 << 12);
+			}
 			else if (counter_word == 3)						//we found the data
 				word->data = from_str_to_int(curr_word);
 			counter_word++;

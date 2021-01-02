@@ -148,6 +148,7 @@ int main(int argc, char *argv[])
 		printf("%s", line);
 	fclose(asm);
 	
+	/*
 	/// part b - reading from program.asm file ///
 	while (fgets(line, MAX_LINE, asm) != NULL)
 	// i increases only for a 'command', 'label' or 'label+command' lines
@@ -194,7 +195,7 @@ int main(int argc, char *argv[])
 			{
 
 			}
-			*/	
+				
 	}
 
 	//loop for the .word commands
@@ -211,7 +212,7 @@ int main(int argc, char *argv[])
 		}
 
 
-
+*/
 	/// part c - writing to imemin.txt file ///
 	imemin = fopen(argv[2], "w");
 	if (imemin == NULL)
@@ -231,7 +232,7 @@ int main(int argc, char *argv[])
 		fprintf(dmemin, "%c%c%c%c%c%c%c%c\n", data_memin[k][0], data_memin[k][1], data_memin[k][2], data_memin[k][3],
 											  data_memin[k][4], data_memin[k][5], data_memin[k][6], data_memin[k][7]);
 	fclose(dmemin);
-
+	
 	/// part e - free memory and quit safely ///
 	mem_file_close(commands, i, labels, j, words, w, asm, 0);  // '0' stands for no memory or files problems =)
 	
@@ -540,7 +541,12 @@ Word scan_word_line(char* line)
 			curr_word[j] = '\0';
 			j = 0;
 			if (counter_word == 2)							//we found the address
-				word->address = from_str_to_int(curr_word);
+			{
+				if (is_negative(curr_word))
+					word->address = (1 << 12) + (from_str_to_int(curr_word) % (1 << 12));
+				else
+					word->address = from_str_to_int(curr_word) % (1 << 12);
+			}
 			else if (counter_word == 3)						//we found the data
 				word->data = from_str_to_int(curr_word);
 			counter_word++;

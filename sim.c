@@ -27,9 +27,11 @@ Yuval Dori                               Yuval Levy
 
 	  last modified   19:14:05  29.12.2020  */
 
+int counter = 0;                                                                         //initialize cycles counter
 // define all are constats and libraries trughout the simulation
-#define IO_REG_AMOUNT 18
+#define IO_REG_AMOUNT 22
 #define REG_AMOUNT 16
+#define IMEM_LINE_SIZE 6
 #define LINE_MAX_SIZE 9
 #define CLK_Hz 1024
 #define MEMORY_SIZE 4096
@@ -42,7 +44,7 @@ Yuval Dori                               Yuval Levy
 //define Command structure 
 typedef struct Command
 {  // A register that holds 5 fields and its easy to acsses each of them on the software level
-	unsigned int imm;          //39:20 bits   - 20 bits representing a number for calculations
+	unsigned int imm;          //19:00 bits   - 20 bits representing a number for calculations (on the lower line in imemin)
 	unsigned int OpCode;       //19:12 bits   - operation identifier
 	unsigned int rd;           //11:08 bits   - destination register address
 	unsigned int rs;           //07:04 bits   - source register address
@@ -50,12 +52,13 @@ typedef struct Command
 }Command;
 
 //behold all of our gloriuos function
-int read_imemin(unsigned int* mem, char * address);      // no?
+int read_imemin(unsigned int* mem, char * address);  
 int read_dmemin(unsigned int* mem, char * address);
-int read_diskin(unsigned int* disk, char * address);     // no?
-int read_irq2in(unsigned int* irq2, char * address);     // no?
+int read_diskin(unsigned int* disk, char * address); 
+int read_irq2in(unsigned int* irq2, char * address); 
 //int file_to_array(unsigned int* arr, char* path);
-int IntExtand(int imm);
+int three_words_to_eight(int imm);
+int five_words_to_eight(int imm);
 unsigned int GetByte(unsigned int num, int pos);
 Command line_to_command(unsigned int imem[], int pc);
 int how_many_rows(Command cmd);
@@ -78,32 +81,53 @@ void sw(int* regs, Command cmd, unsigned int * mem);
 int reti(int* io_regs, int pc, int* reti_flag);
 void in(int* io_regs, int* regs, Command cmd);
 void out(int* io_regs, int* regs, Command cmd, int* disk, int* mem);
-int OPcode_To_execute(int regs[], int io_regs[], int pc, Command cmd, unsigned int * mem, int * disk, int* reti_flag);
+int OPcode_To_execute(int regs[], int io_regs[], int pc, Command cmd, unsigned int * mem, int * disk, int* reti_flag, unsigned int * dmem);
 void timer(int* io_regs);
 void disk_handler(int* disk, int* io_regs, int* mem);
 void update_irq2(int* io_regs, int* irq2, int counter);
 int ABS(signed int num);
 void export_regout(int regs[], char file_name[]);
-void export_memout(unsigned int* mem, char file_name[]);
+void export_dmemout(unsigned int* mem, char file_name[]);
 void export_diskout(unsigned int* disk, char file_name[]);
-void export_cycles(int counter, char file_name[]);
+void export_cycles(int counter,int lines, char file_name[]);
 void create_line_for_trace(char line_for_trace[], int regs[], int pc, unsigned int inst, int imm);
-void create_line_for_hwregtrace(char line_for_hwregtrace[], int io_regs[], int regs[], int counter, Command cmd);
+void create_line_for_hwregtrace(char line_for_hwregtrace[], int io_regs[], int regs[], int counter, Command cmd, int dmem[]);
 void create_line_for_monitor(char line_for_display[], int regs[], int io_regs[], int cycles, Command cmd);
 void create_line_for_monitor_yuv(char line_for_display[], int regs[], int io_regs[], int cycles, Command cmd);
 void create_line_for_leds(char line_for_leds[], int regs[], int io_regs[], int cycles, Command cmd);
-Command interrupt_handler(int* reg_io, int* regs, Command cmd, int* memory, int* PC, int* reti_on, unsigned int imem[], int pc);
+Command interrupt_handler(int* reg_io, int* regs, Command cmd, int* memory, int* PC, int* reti_on, unsigned int imem[], int pc, int counter);
 Command Invalid_cmd(Command cmd);
+void print_fib(int pc, int imem[], int* regs, int* io_regs, Command cmd);
+void printf_regs(int* regs, int* io_regs);
+
+//a function for printing all the registers, for debug use
+void printf_regs(int* regs, int* io_regs) {
+	for (int g = 0; g < REG_AMOUNT; g++)
+	{
+		printf(" %d ,", regs[g]);
+	}
+	printf("\n");
+	printf("io regs arrey:");
+	for (int n = 0; n < IO_REG_AMOUNT; n++)
+	{
+		printf(" %d ,", io_regs[n]);
+	}
+	printf("\n");
+}
 
 // we must handle interrupts when they occour, due to clock or errors
-Command interrupt_handler(int* reg_io, int* regs, Command cmd, int* memory, int* PC, int* reti_on, unsigned int imem[], int pc) {
-	if (*reti_on) {
-		int temp_PC = 0;                    //setting a temp integer to hold the PC for after the interrupt is over
-		*reti_on = 0;                       //zeroing the flag
-		reg_io[7] = *PC;                    //the 7th spot on the i/o register holds the current Program Counter
-		*PC = reg_io[6];                    //our PC is being changed one spot back
+Command interrupt_handler(int* reg_io, int* regs, Command cmd, int* memory, int* PC, int* reti_on, unsigned int imem[], int pc, int counter)
+{ 
+	if (*reti_on) 
+	{ 
+		printf("being interupted on pc: %d\n", counter);
+		int temp_PC = 0;                              //setting a temp integer to hold the PC for after the interrupt is over
+		*reti_on = 0;                                 //zeroing the flag
+		reg_io[7] = *PC;                              //the 7th spot on the i/o register holds the current Program Counter
+		*PC = reg_io[6];                              //our PC is being changed one spot back
 		//temp_PC = memory[reg_io[6]];
-		return line_to_command(memory, reg_io[6]);    // ******************************************************************************************
+		counter--;
+		return line_to_command(memory, reg_io[6]);    // ***************************************************************************
 	}
 	//if reti isnt on then there's no need to interrupt
 	else
@@ -138,7 +162,7 @@ int read_imemin(unsigned int* imem, char * path)
 		return -1;
 
 	// read imemin file line by line and turn it into array
-	char line[6];
+	char line[IMEM_LINE_SIZE];
 	int i = 0;
 	while (!feof(fp) && fgets(line, 6, fp) && (i <= MEMORY_SIZE)) 
 	{                                                          //while the file is not ended or reached max line
@@ -196,7 +220,6 @@ int read_diskin(unsigned int* disk, char * address)
 	return 0;
 }
 
-
 //read irg2in line by line and store it on "irq2" array
 int read_irq2in(unsigned int* irq2, char * address)
 {
@@ -210,21 +233,31 @@ int read_irq2in(unsigned int* irq2, char * address)
 	{
 		if ((strcmp(line,"\n")== 0) || (strcmp(line,"\0")== 0))
 			continue;                                                // ignore white spaces
-		irq2[strtol(line, NULL, 10)] = 1;
+		irq2[i] = strtol(line, NULL, 10);
 		i++;
+		printf("%d, ", irq2[i-1]);
 	}
 	fclose(fp); // close file
+	printf("\n");
 	return 0;
 }
 
-
 //edds ones in front of imm
-int IntExtand(int imm)
+int three_words_to_eight(int imm)
 {  
 	int extanded = (0x00000FFF & imm);       //000000000000000000000000xxxxxxxxxxxx
 	int mask = 0x00000800;                   //000000000000000000000000100000000000
 	if (mask & imm)                          //if imm is negative extand it withe ones, else with zeros 
 		extanded += 0xFFFFF000;              //111111111111111111111111xxxxxxxxxxxx
+	return extanded;
+}
+
+int five_words_to_eight(int imm)
+{
+	int extanded = (0x000FFFFF & imm);       //000000000000xxxxxxxxxxxxxxxxxxxx
+	int mask = 0x00080000;                   //00000000000010000000000000000000
+	if (mask & imm)                          //if imm is negative extand it withe ones, else with zeros 
+		extanded += 0xFFF00000;              //111111111111xxxxxxxxxxxxxxxxxxxx
 	return extanded;
 }
 
@@ -263,26 +296,28 @@ Command line_to_command(unsigned int imem[], int pc)
 	//                        000E3    
 	unsigned int inst=imem[pc];
 	Command cmd;                                                                         //initialize an empty commant to fill with the line from memory
-	cmd.OpCode = (GetByte(inst, 7) * 16) + GetByte(inst, 6);                             //opcode is in the 2 first bytes of the line  
-	cmd.rd = GetByte(inst, 5);                                                           //rd register is in the 5th byte of the line  
-	cmd.rs = GetByte(inst, 4);                                                           //rs register is in the 4th byte of the line  
-	cmd.rt = GetByte(inst, 3);                                                           //rt register is in the 3rd byte of the line  
+	int temp;
+	cmd.OpCode = (GetByte(inst, 4) * 16) + GetByte(inst, 3);                             //opcode is in the 2 first bytes of the line  
+	cmd.rd = GetByte(inst, 2);                                                           //rd register is in the 5th byte of the line  
+	cmd.rs = GetByte(inst, 1);                                                           //rs register is in the 4th byte of the line  
+	cmd.rt = GetByte(inst, 0);                                                           //rt register is in the 3rd byte of the line  
 	cmd.imm = 0;                                                                         //setting imm field to zero to avoid useless crap on it
 	if (cmd.OpCode != 21)
 	{
 		if ((cmd.rd == 1) || (cmd.rt == 1) || (cmd.rs == 1))                             //checking if we have a immidiate command (2 rows)
 		{
-			//printf("test - %d is a imm command,  ", pc);
 			pc++;                                                                        //the second row is saved for imm (place shift by multiply by powers of 16)
 			inst = imem[pc];
-			cmd.imm = (GetByte(inst, 4) * 65536) + (GetByte(inst, 3) * 4096) + (GetByte(inst, 2) * 256) + (GetByte(inst, 1) * 16) + GetByte(inst, 0);
+			temp = (GetByte(inst, 4) * 65536) + (GetByte(inst, 3) * 4096) + (GetByte(inst, 2) * 256) + (GetByte(inst, 1) * 16) + GetByte(inst, 0);
+			cmd.imm = five_words_to_eight(temp);
+			//printf("test - %d is a imm command,  ", pc);
 			//printf("and the imm value is %d \n", cmd.imm);
 		}
 	}
 	//in case we have any non valid input in the given memory, we use Invalid_cmd() to handle Errors
 	if ((cmd.OpCode < 7) || (cmd.OpCode == 14) || (cmd.OpCode == 17))     //if opcode arithmetic we need to check few expations
 	{
-		if ((cmd.rd > 15) || (cmd.rt > 15) || (cmd.rs > 15) || (cmd.rd == 1) || (cmd.OpCode > 21))   
+		if ((cmd.rd > 15) || (cmd.rt > 15) || (cmd.rs > 15) || (cmd.rd == 1) || (cmd.rd == 0) || (cmd.OpCode > 21))
 			cmd = Invalid_cmd(cmd);                                       //if reg is above 15 or write to imm reg or opcode more then 21
 
 		if ((cmd.OpCode == 15) && (cmd.rd > 15))                          // check only cmd.rd
@@ -292,9 +327,9 @@ Command line_to_command(unsigned int imem[], int pc)
 		{
 			if ((cmd.rd > 15) || (cmd.rt > 15) || (cmd.rs > 15))
 				cmd = Invalid_cmd(cmd);
-		}
+		}  
 		if ((cmd.OpCode == 15) || (cmd.OpCode == 18))                     //if opcode sw check only registers
-		{                        //**************************************************************************need to validate numbers
+		{   //???          need to validate numbers
 			if ((cmd.rd > 15) || (cmd.rt > 15) || (cmd.rs > 15))
 				cmd = Invalid_cmd(cmd);
 		}
@@ -400,53 +435,57 @@ int jal(int* regs, Command cmd, int pc)
 	pc = regs[cmd.rd];
 	return pc;
 }
-void lw(int * regs, Command cmd, unsigned int * mem)
+void lw(int * regs, Command cmd, unsigned int * dmem)
 {
-	if (regs[cmd.rs] + regs[cmd.rt] < MEMORY_SIZE)
-		regs[cmd.rd] = mem[regs[cmd.rs] + regs[cmd.rt]];
+	if (regs[cmd.rs] + regs[cmd.rt] < STORAGE_SIZE)
+		regs[cmd.rd] = dmem[regs[cmd.rs] + regs[cmd.rt]];
 }
-void sw(int * regs, Command cmd, unsigned int * mem)
+void sw(int * regs, Command cmd, unsigned int * dmem)
 {
-	if (regs[cmd.rs] + regs[cmd.rt] < MEMORY_SIZE)
-		mem[regs[cmd.rs] + regs[cmd.rt]] = regs[cmd.rd];
+	if (regs[cmd.rs] + regs[cmd.rt] < STORAGE_SIZE)
+		dmem[regs[cmd.rs] + regs[cmd.rt]] = regs[cmd.rd];
 }
 int reti(int* reg_io, int pc, int* reti_on)        //we use boolean flag to knowit reti is on or off
 {
 	if (*reti_on != 0)                             //if its on turn it off
 		*reti_on = 0;
 	else
-		*reti_on = 1;                              //iff its 1 return it
+		*reti_on = 1;                              //iff its off return it on
 
 	return reg_io[7];
 }
 void in(int* io_regs, int* regs, Command cmd)
 {
-	if (regs[cmd.rs] + regs[cmd.rt] < 18)
+	if (regs[cmd.rs] + regs[cmd.rt] < 22)
 	{
 		regs[cmd.rd] = io_regs[regs[cmd.rs] + regs[cmd.rt]];
 	}
 }
 void out(int* io_regs, int* regs, Command cmd, int* disk, int* mem)
 {
-	if (regs[cmd.rs] + regs[cmd.rt] < 18)
+	//printf("rs:%d rt:%d", regs[cmd.rs], regs[cmd.rt]);
+	disk_handler(disk, io_regs, mem);
+	if (regs[cmd.rs] + regs[cmd.rt] < 22)    //???
 	{
+		io_regs[regs[cmd.rs] + regs[cmd.rt]] = regs[cmd.rd];
+		//printf("    is good\n");
 		if ((regs[cmd.rs] + regs[cmd.rt]) == 14)
 		{
-			io_regs[14] = regs[cmd.rd];
-			disk_handler(disk, io_regs, mem);
+			printf("..................................................");
 		}
 	}
-	else
-		io_regs[regs[cmd.rs] + regs[cmd.rt]] = regs[cmd.rd];
+	//else
+		//printf("    is bad\n");
+		//io_regs[regs[cmd.rs] + regs[cmd.rt]] = regs[cmd.rd];
 }
 int halt()
 {
-	printf("Halt has been activated, exiting simulation");
+	printf("Halt has been activated, exiting simulation \n");
 	return -1;
 }
 
 // excution function for all the relevent opcode
-int OPcode_To_execute(int regs[], int io_regs[], int pc, Command cmd, unsigned int * mem, int * disk, int* reti_flag)
+int OPcode_To_execute(int regs[], int io_regs[], int pc, Command cmd, unsigned int * mem, int * disk, int* reti_flag, unsigned int * dmem)
 {
 	switch (cmd.OpCode) // after every excution we have to check that $zero doesn't change his value
 	{
@@ -518,6 +557,7 @@ int OPcode_To_execute(int regs[], int io_regs[], int pc, Command cmd, unsigned i
 
 		pc = beq(regs, cmd, pc);
 		regs[0] = $ZERO;
+		//printf(" rs:%d, rt: %d  now beq to pc: %d \n", io_regs[cmd.rs], io_regs[cmd.rt], pc);
 		break;
 	}
 	case 10:
@@ -536,6 +576,7 @@ int OPcode_To_execute(int regs[], int io_regs[], int pc, Command cmd, unsigned i
 	{                 //bgt opcode
 		pc = bgt(regs, cmd, pc);
 		regs[0] = $ZERO;
+		//printf(" rs:%d, rt: %d  now bgt to pc: %d \n", regs[cmd.rs], regs[cmd.rt], pc);
 		break;
 	}
 	case 13:
@@ -553,19 +594,20 @@ int OPcode_To_execute(int regs[], int io_regs[], int pc, Command cmd, unsigned i
 	case 15:
 	{                 //jal opcode
 		pc = jal(regs, cmd, pc);
+		//printf("jumped to %d\n", pc);
 		regs[0] = $ZERO;
 		break;
 	}
 	case 16:
 	{                 //lw opcode
-		lw(regs, cmd, mem);
+		lw(regs, cmd, dmem);
 		regs[0] = $ZERO;
 		pc++;
 		break;
 	}
 	case 17:
 	{                 //sw opcode
-		sw(regs, cmd, mem);
+		sw(regs, cmd, dmem);
 		regs[0] = $ZERO;
 		pc++;
 		break;
@@ -586,6 +628,7 @@ int OPcode_To_execute(int regs[], int io_regs[], int pc, Command cmd, unsigned i
 	{                 //out command
 		out(io_regs, regs, cmd, disk, mem);
 		regs[0] = $ZERO;
+		//printf("\n\n\n outing on pc = %d\n\n\n", pc);
 		pc++;
 		break;
 	}
@@ -602,7 +645,7 @@ void timer(int* io_regs)
 {
 	if (io_regs[11] == 1)                   //io_regs[11] is the timer enabler
 	{
-		if (io_regs[12] == io_regs[13])     // need to zero the timer
+		if (io_regs[12] == io_regs[13])     //if current == max, we need to zero the timer
 		{
 			io_regs[3] = 1;
 			io_regs[12] = 0;
@@ -615,7 +658,8 @@ void timer(int* io_regs)
 // how to handel write and read from the disk
 void disk_handler(int* disk, int * io_regs, int* mem)
 {
-	if (io_regs[17] == 0) {
+	if (io_regs[17] == 0)
+	{
 		io_regs[11] = 1;                  //enable timer	
 		io_regs[13] = CLK_Hz;             //set timermax to 1024
 		io_regs[17] = 1;                  //disk is now busy
@@ -663,7 +707,7 @@ void disk_handler(int* disk, int * io_regs, int* mem)
 //update the irq2status register
 void update_irq2(int* io_regs, int* irq2, int counter)
 {
-	io_regs[5] = 0;                 //??? maybe delete this line
+	//io_regs[5] = 0;                 //??? maybe delete this line
 	if (counter > MEMORY_SIZE)      //if we passed memory size then zero the irq2status register
 		io_regs[5] = 0;
 	// maybe - else if (irq2[counter] != NULL
@@ -685,12 +729,12 @@ void export_regout(int regs[], char file_name[]) {
 	{
 		fprintf(fp_regout, "%08X\n", regs[i]);
 	}
-	fprintf(fp_regout, "non condition writing onto regout\n");
+	//fprintf(fp_regout, "non condition writing onto regout\n");
 	fclose(fp_regout);                 // close file
 }
 
 // this function creates memout file
-void export_memout(unsigned int * mem, char file_name[]) {
+void export_dmemout(unsigned int * mem, char file_name[]) {
 	FILE* fp_memout;
 	fp_memout = fopen(file_name, "w");     // open a new file
 	if (fp_memout == NULL)                 // handle error
@@ -703,7 +747,7 @@ void export_memout(unsigned int * mem, char file_name[]) {
 		fprintf(fp_memout, "%08X\n", *mem);
 		mem++;
 	}
-	fprintf(fp_memout, "non condition writing onto memout\n");
+	//fprintf(fp_memout, "non condition writing onto dmemout\n");
 	fclose(fp_memout);                     // close file
 }
 
@@ -721,12 +765,12 @@ void export_diskout(unsigned int * disk, char file_name[]) {
 		fprintf(fp_diskout, "%08X\n", *disk);
 		disk++;
 	}
-	fprintf(fp_diskout, "non condition writing onto diskout\n");
+	//fprintf(fp_diskout, "non condition writing onto diskout\n");
 	fclose(fp_diskout);                         // close file
 }
 
 //create the cycles.txt file
-void export_cycles(int counter, char file_name[]) {
+void export_cycles(int cycles,int lines, char file_name[]) {
 	FILE* fp_cycles;
 	fp_cycles = fopen(file_name, "w");
 	if (fp_cycles == NULL) // handle error
@@ -734,10 +778,14 @@ void export_cycles(int counter, char file_name[]) {
 		printf("error opening file");
 		exit(1);
 	}
-	char c_counter[8] = { 0 };
-	sprintf(c_counter, "%d", counter);//print the counter to file
-	fputs(c_counter, fp_cycles);
-	fprintf(fp_cycles, "non condition writing onto cycles\n");
+
+	char c_cycles[8] = { 0 };
+	sprintf(c_cycles, "%d\n", cycles);  //print the cycles counter to file
+	fputs(c_cycles, fp_cycles);
+	char c_lines[8] = { 0 };
+	sprintf(c_lines, "%d", lines);    //print the lines counter to file
+	fputs(c_lines, fp_cycles);
+	//fprintf(fp_cycles, "non condition writing onto cycles\n");
 	fclose(fp_cycles); // close file
 }
 
@@ -749,8 +797,8 @@ void create_line_for_trace(char Trace_Line[], int regs[], int pc, unsigned int i
 	char inst_line[9];
 	char pc_char[10] = { 0 };
 	char temp_reg_char[9] = { 0 };
-	sprintf(pc_char, "%08X", pc);
-	sprintf(inst_line, "%08X", inst);
+	sprintf(pc_char, "%03X", pc-1);
+	sprintf(inst_line, "%05X", inst);
 	sprintf(Trace_Line, pc_char);                                       //add pc to line
 	sprintf(Trace_Line + strlen(Trace_Line), " ");                      //add space
 	sprintf(Trace_Line + strlen(Trace_Line), inst_line);                //add opcode to line
@@ -761,7 +809,7 @@ void create_line_for_trace(char Trace_Line[], int regs[], int pc, unsigned int i
 		int temp_reg = 0;
 		if (i == 1)                                                     // for imm
 		{
-			sprintf(temp_reg_char, "%08X", IntExtand(imm));             //change to hex
+			sprintf(temp_reg_char, "%08X", three_words_to_eight(imm));             //change to hex
 			sprintf(Trace_Line + strlen(Trace_Line), temp_reg_char);    //add to line
 			sprintf(Trace_Line + strlen(Trace_Line), " ");
 			continue;
@@ -772,7 +820,7 @@ void create_line_for_trace(char Trace_Line[], int regs[], int pc, unsigned int i
 			temp_reg = regs[i];
 		sprintf(temp_reg_char, "%08X", temp_reg);                       //change to hex
 		sprintf(Trace_Line + strlen(Trace_Line), temp_reg_char);        //add to line
-		if (i < 16)                                                       //no space for last register
+		if (i < 15)                                                       //no space for last register
 			sprintf(Trace_Line + strlen(Trace_Line), " ");
 	}
 	/*	int temp_reg = 0;
@@ -785,17 +833,21 @@ void create_line_for_trace(char Trace_Line[], int regs[], int pc, unsigned int i
 }
 
 // create function that will colect data for hwregtrace
-void create_line_for_hwregtrace(char hwregtrace_line[], int io_regs[], int regs[], int counter, Command cmd)
+void create_line_for_hwregtrace(char hwregtrace_line[], int io_regs[], int regs[], int counter, Command cmd, int dmem[])
 {
 	char counter_char[10] = { 0 };
 	char temp_reg_char[10] = { 0 };
+	//printf(" rs is %d, rt is %d regs[rs] is %d and regs[rt] is %d  \n", cmd.rs, cmd.rt, regs[cmd.rs], regs[cmd.rt]);
 	sprintf(counter_char, "%d", counter);
 	sprintf(hwregtrace_line, counter_char);                                //add counter to line
 	sprintf(hwregtrace_line + strlen(hwregtrace_line), " ");
-	if (cmd.OpCode == 17)
+	
+	if (cmd.OpCode == 19)                                   
 		sprintf(hwregtrace_line + strlen(hwregtrace_line), "READ ");       //add read to line
+	
 	else
 		sprintf(hwregtrace_line + strlen(hwregtrace_line), "WRITE ");      //add write to line
+	
 	switch (regs[cmd.rs] + regs[cmd.rt])
 	{
 	case 0:
@@ -910,16 +962,17 @@ void create_line_for_hwregtrace(char hwregtrace_line[], int io_regs[], int regs[
 	}
 	}
 
-	if (cmd.OpCode == 17)       //if we read 
+	if ((cmd.OpCode == 19)&&((regs[cmd.rs] + regs[cmd.rt])<22))                                                  //if we read 
 	{
 		sprintf(temp_reg_char, "%08X", io_regs[regs[cmd.rs] + regs[cmd.rt]]);
 		sprintf(hwregtrace_line + strlen(hwregtrace_line), temp_reg_char); //add data to line
 	}
-	else                        //if we write
+	else                                                                   //if we write
 	{
 		sprintf(temp_reg_char, "%08X", regs[cmd.rd]);
 		sprintf(hwregtrace_line + strlen(hwregtrace_line), temp_reg_char); //add data to line
 	}
+	//printf("..........................................................................................................");
 }
 
 //create monitor.txt
@@ -966,6 +1019,33 @@ Command Invalid_cmd(Command cmd)
 	cmd.rt = 0;
 	cmd.imm = 1;
 	return cmd;
+}
+void print_fib(int pc, int imem[], int* regs, int* io_regs, Command cmd)
+{
+	switch (pc) {
+	case 33:
+	{
+		printf("pc:%d, $s0:%d\n", pc, regs[9]);
+		break;
+	}
+	case 35:
+	{
+		printf("pc:%d, $ra:%d\n", pc, regs[15]);
+		break;
+	}
+	case 37:
+	{
+		printf("pc:%d, $a0:%d\n", pc, regs[3]);
+		break;
+	}
+	case 41:
+	{
+		printf("pc:%d, jump:%d to 46\n", pc, regs[3]-1);
+		break;
+	}
+
+	}
+	return;
 }
 
 void Error_Handler(int id)
@@ -1032,7 +1112,8 @@ int main(int argc, char* argv[])
 
 	int regs[REG_AMOUNT] = { 0 };                                                            //initialize register
 	int io_regs[IO_REG_AMOUNT] = { 0 };                                                      //initialize input output register
-	int counter = 0;                                                                         //initialize counter
+
+	int lines = 0;                                                                           //initialize line counter
 	int pc = 0;                                                                              //initialize pc
 	int* pc_ptr = &pc;                                                                       //initialize pc pointer
 	int reti = 1;                                                                            //setting reti to 1
@@ -1075,32 +1156,39 @@ int main(int argc, char* argv[])
 	if (fp_monitor_yuv == NULL)
 		Error_Handler(12);
 
+	int max = 0;
 	// Execution
-	
-
-	while ((pc > -1) && (pc < MEMORY_SIZE))                                                  //use the pc as flag for halt function
+	while ((pc > -1) && (pc < MEMORY_SIZE+1))                                                 //use the pc as flag for halt function150
 	{
-		//printf("iteration number : %d \n", pc);
-		if (pc <= MEMORY_SIZE - 1)
-			inst = imem[pc];                                                                 //setting inst to be the current memory instruction
+		if (pc < MEMORY_SIZE)
+			inst = imem[pc];                                                           		//setting inst to be the current memory instruction
+		
+		//printf_regs(regs, io_regs);
 
 		Command cmd = line_to_command(imem, pc);                                             //create Command struct
-		if ((how_many_rows(cmd) == 2)&&(pc!= MEMORY_SIZE))                                   //if the command has an imm field we should jump PC by 1 and read the second row as an int
+		if ((how_many_rows(cmd) == 2) && (pc != MEMORY_SIZE)) {                              //if the command has an imm field we should jump PC by 1 and read the second row as an int	
 			pc++;
-		printf("%d test - command is op-%d rd-%d rt-%d rs-%d imm-%d \n", pc, cmd.OpCode, cmd.rd, cmd.rt, cmd.rs, cmd.imm );
+			//counter++;
+		}
+		lines++; 
+
 		if ((io_regs[0] && io_regs[3]) || (io_regs[1] && io_regs[4]) || (io_regs[2] && io_regs[5]))
-		{
-			cmd = interrupt_handler(io_regs, regs, cmd, imem, pc_ptr, reti_flag, imem, pc);  //we have irq==1 and need to handle it	
-			printf("test - being interrupted \n");
+		{/*          \/                            \/                            \/
+	     irq0enable && irq0status==1 || irq1enable && irq1status==1 || irq2enable && irq2status==1*/
+			cmd = interrupt_handler(io_regs, regs, cmd, imem, pc_ptr, reti_flag, dmem, pc ,counter);  //we have irq==1 and need to handle it	
+			//printf("test - being interrupted \n");
 			if (pc <= MEMORY_SIZE - 1)
 				inst = imem[pc];
 		}
+		//printf("PC is:%d command is op:%d rd:%d rt:%d rs:%d imm:%d \n\n", pc, cmd.OpCode, cmd.rd, cmd.rt, cmd.rs, cmd.imm );
 		char line_for_trace[200] = { 0 };                                                    //create line for trace file
 		char line_for_leds[20] = { 0 };                                                      //create line for leds file
 		char line_for_monitor[20] = { 0 };                                                   //create line for display file
 		char line_for_monitor_yuv[20] = { 0 };                                               //create line for display file
 		char line_for_hwregtrace[100] = { 0 };                                               //create line for hwregtrace file
-		regs[1] = IntExtand(cmd.imm);                                                        //first we do sign extend to immiediate
+		
+		regs[1] = five_words_to_eight(cmd.imm);                                                        //first we do sign extend to immiediate
+		
 		update_irq2(io_regs, irq2, counter);                                                 //update irq2status register
 		timer(io_regs);                                                                      //check if timer is enable
 		if (io_regs[17] == 1)
@@ -1108,56 +1196,45 @@ int main(int argc, char* argv[])
 			disk_handler(disk, io_regs, imem);
 			printf("test 1 \n");
 		}
-		if ((cmd.OpCode == 17) || (cmd.OpCode == 18))                                        //if we read or write
+		if ((cmd.OpCode == 19) || (cmd.OpCode == 20))                                        //if we read or write
 		{
-			printf("test - opcode is read or write\n");
-			create_line_for_hwregtrace(line_for_hwregtrace, io_regs, regs, counter, cmd);    //append to trace file
+			create_line_for_hwregtrace(line_for_hwregtrace, io_regs, regs, counter, cmd, dmem);    //append to trace file
 			fprintf(fp_hwregtrace, "%s\n", line_for_hwregtrace);                             //fprintf the data at the end of hwregtrace
-			fprintf(fp_hwregtrace, "condition writing onto hwregtrace\n");
 		}
 		create_line_for_trace(line_for_trace, regs, pc, inst, cmd.imm);                      //append to trace file
 		fprintf(fp_trace, "%s\n", line_for_trace);                                           //fprintf the data at the end of trace
-		//fprintf(fp_trace, "condition writing onto trace\n");
 		if (((regs[cmd.rs] + regs[cmd.rt]) == 9) && (cmd.OpCode == 18))
 		{
-			printf("test 2 \n");
 			if (regs[cmd.rd] != io_regs[regs[cmd.rs] + regs[cmd.rt]])
 			{
 				create_line_for_leds(line_for_leds, regs, io_regs, counter, cmd);            //append to leds file
 				fprintf(fp_leds, "%s\n", line_for_leds);
-				fprintf(fp_leds, "condition writing onto leds\n");
 			}
 		}
-		if ((regs[cmd.rs] + regs[cmd.rt]) == 10 && cmd.OpCode == 18)
+		if ((cmd.OpCode == 18) && ((regs[cmd.rs] + regs[cmd.rt]) < 22))  //???  (regs[cmd.rs] + regs[cmd.rt]) == 10 && 
 		{
-			printf("test 2 \n");
 			if (regs[cmd.rd] != io_regs[regs[cmd.rs] + regs[cmd.rt]])
 			{
 				create_line_for_monitor(line_for_monitor, regs, io_regs, counter, cmd);      //append to display file
 				fprintf(fp_monitor, "%s\n", line_for_monitor);
-				fprintf(fp_monitor, "condition writing onto monitor\n");
 				create_line_for_monitor_yuv(line_for_monitor_yuv, regs, io_regs, counter, cmd);
-				fprintf(fp_monitor_yuv, "%s\n", line_for_monitor_yuv);
-				fprintf(fp_monitor_yuv, "condition writing onto monitor.yuv\n");
+				fprintf(fp_monitor_yuv,"%s\n", line_for_monitor_yuv);
 			}
 		}
-		//printf("test 3 \n");
-		pc = OPcode_To_execute(regs, io_regs, pc, cmd, imem, disk, reti_flag);               //execute instruction
-		io_regs[8] = counter++;                                                              //clk cycle counter
+		pc = OPcode_To_execute(regs, io_regs, pc, cmd, imem, disk, reti_flag, dmem);             //execute instruction
+		io_regs[8] = counter++;                                                                  //clk cycle counter
+		if (max < pc)
+			max = pc;
+		print_fib( pc, imem, regs, io_regs, cmd);
 	}
+	printf("while loop out num is: %d and IOreg timer is %d\n",counter, io_regs[12]);
 
-	fprintf(fp_leds, "non condition writing onto leds\n");
-	//fprintf(fp_trace, "non condition writing onto trace\n");
-	fprintf(fp_hwregtrace, "non condition writing onto hwregtrace\n");
-	fprintf(fp_monitor, "non condition writing onto monitor\n");
-	fprintf(fp_monitor_yuv, "1010101001010101010010101110110100010101110100010001010001011010\n");
-
-	export_memout(imem, argv[5]);                                                            //create dmemout file
+	export_dmemout(dmem, argv[5]);                                                            //create dmemout file
 	export_regout(regs, argv[6]);                                                            //create regout file
-	export_cycles(counter, argv[9]);                                                         //create cycles file
+	export_cycles(counter,lines, argv[9]);                                                         //create cycles file
 	export_diskout(disk, argv[13]);                                                          //create diskout file
-	                                  //closing all the files
-	
+	        
+												//closing all the files
 	fclose(fp_trace);
 	fclose(fp_hwregtrace);                                                                   
 	fclose(fp_leds);                                                                       
@@ -1169,9 +1246,14 @@ int main(int argc, char* argv[])
 
 
 /* issues
-	1. no match between trace
-	2.need to run over file writing and validate entire line_for functions
-	3.need to check why pc keeps on staying on 4096 ant not over and out
-	4.need to line to command on an interrupt or disk handler
-	5.need to check closing all files instead of exit 1.
+
+	counter not OK
+	interrupts need to be addresed
+
+	need to check why pc keeps on staying on 4096 ant not over and out
+	need to line to command on an interrupt or disk handler
+	need to check closing all files instead of exit 1
+	need to run over file writing and validate entire line_for functions
+
+	change counter to poniter
 */
